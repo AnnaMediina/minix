@@ -27,6 +27,7 @@
 #include <libexec.h>
 #include <sys/ptrace.h>
 #include "mproc.h"
+#include <minix/sysutil.h> 
 
 #define ESCRIPT	(-2000)	/* Returned by read_header for a #! script. */
 #define PTRSIZE	sizeof(char *) /* Size of pointers in argv[] and envp[]. */
@@ -49,7 +50,7 @@ do_exec(void)
 	m.VFS_PM_FRAME_LEN = m_in.m_lc_pm_exec.framelen;
 	m.VFS_PM_PS_STR = m_in.m_lc_pm_exec.ps_str;
 
-	printf("Executando: %s\n", (char *)m.VFS_PM_PATH);
+	kprintf("Executando: %s\n", (char *)m.VFS_PM_PATH);
 	
 	tell_vfs(mp, &m);
 
