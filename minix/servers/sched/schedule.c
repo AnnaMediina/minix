@@ -38,7 +38,8 @@ static int schedule_process(struct schedproc * rmp, unsigned flags);
 
 #define cpu_is_available(c)	(cpu_proc[c] >= 0)
 
-#define DEFAULT_USER_TIME_SLICE 200
+//#define DEFAULT_USER_TIME_SLICE 200
+#define DEFAULT_USER_TIME_SLICE 0x7FFFFFFF  //VALOR MAX
 
 /* processes created by RS are sysytem processes */
 #define is_system_proc(p)	((p)->parent == RS_PROC_NR)
@@ -83,10 +84,12 @@ static void pick_cpu(struct schedproc * proc)
 /*===========================================================================*
  *				do_noquantum				     *
  *===========================================================================*/
+ 
 
+ //ESSA FUNÇÃO É CHAMADA QUANDO UM PROCESSO ACABA O QUANTUM, ELA REBAIXA A PRIORIDADE E REESCALONA
 int do_noquantum(message *m_ptr)
 {
-	register struct schedproc *rmp;
+	/*register struct schedproc *rmp;
 	int rv, proc_nr_n;
 
 	if (sched_isokendpt(m_ptr->m_source, &proc_nr_n) != OK) {
@@ -95,14 +98,17 @@ int do_noquantum(message *m_ptr)
 		return EBADEPT;
 	}
 
+    //DIMINUI PRIORIDADE
 	rmp = &schedproc[proc_nr_n];
 	if (rmp->priority < MIN_USER_Q) {
-		rmp->priority += 1; /* lower priority */
+		rmp->priority += 1;  //lower priority 
 	}
 
+    //REESCALONA
 	if ((rv = schedule_process_local(rmp)) != OK) {
 		return rv;
 	}
+	*/
 	return OK;
 }
 
@@ -171,8 +177,12 @@ int do_start_scheduling(message *m_ptr)
 	if (rmp->endpoint == rmp->parent) {
 		/* We have a special case here for init, which is the first
 		   process scheduled, and the parent of itself. */
-		rmp->priority   = USER_Q;
-		rmp->time_slice = DEFAULT_USER_TIME_SLICE;
+		//rmp->priority   = USER_Q;
+		//rmp->time_slice = DEFAULT_USER_TIME_SLICE;
+
+
+		rmp->priority   = 0;	//SEM PRIORIDADE
+		rmp->time_slice = 0x7FFFFFFF; //MAX VALOR DE QUANTUM
 
 		/*
 		 * Since kernel never changes the cpu of a process, all are
@@ -192,8 +202,11 @@ int do_start_scheduling(message *m_ptr)
 		/* We have a special case here for system processes, for which
 		 * quanum and priority are set explicitly rather than inherited 
 		 * from the parent */
-		rmp->priority   = rmp->max_priority;
-		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
+		//rmp->priority   = rmp->max_priority;
+		//rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
+
+		rmp->priority = 0;          /* Prioridade única */
+        rmp->time_slice = 0x7FFFFFFF; /* Quantum "infinito" */
 		break;
 		
 	case SCHEDULING_INHERIT:
@@ -204,8 +217,11 @@ int do_start_scheduling(message *m_ptr)
 				&parent_nr_n)) != OK)
 			return rv;
 
-		rmp->priority = schedproc[parent_nr_n].priority;
-		rmp->time_slice = schedproc[parent_nr_n].time_slice;
+		//rmp->priority = schedproc[parent_nr_n].priority;
+		//rmp->time_slice = schedproc[parent_nr_n].time_slice;
+
+		rmp->priority = 0;          /* Prioridade única */
+        rmp->time_slice = 0x7FFFFFFF; /* Quantum "infinito" */
 		break;
 		
 	default: 
@@ -253,12 +269,12 @@ int do_start_scheduling(message *m_ptr)
  *===========================================================================*/
 int do_nice(message *m_ptr)
 {
-	struct schedproc *rmp;
+	/*struct schedproc *rmp;
 	int rv;
 	int proc_nr_n;
 	unsigned new_q, old_q, old_max_q;
 
-	/* check who can send you requests */
+	// check who can send you requests 
 	if (!accept_message(m_ptr))
 		return EPERM;
 
@@ -274,49 +290,59 @@ int do_nice(message *m_ptr)
 		return EINVAL;
 	}
 
-	/* Store old values, in case we need to roll back the changes */
+	// Store old values, in case we need to roll back the changes 
 	old_q     = rmp->priority;
 	old_max_q = rmp->max_priority;
 
-	/* Update the proc entry and reschedule the process */
+	 //Update the proc entry and reschedule the process 
 	rmp->max_priority = rmp->priority = new_q;
 
 	if ((rv = schedule_process_local(rmp)) != OK) {
-		/* Something went wrong when rescheduling the process, roll
-		 * back the changes to proc struct */
+		 //Something went wrong when rescheduling the process, roll
+		// back the changes to proc struct 
 		rmp->priority     = old_q;
 		rmp->max_priority = old_max_q;
 	}
-
-	return rv;
+	*/
+	//return rv;
+	return OK; //FAZ NADA
 }
 
 /*===========================================================================*
  *				schedule_process			     *
  *===========================================================================*/
-static int schedule_process(struct schedproc * rmp, unsigned flags)
+//COLOCA NOVA PRIORIDADE , NOVO QUANTUM, NOVO NICED, TROCA CPU
+ static int schedule_process(struct schedproc * rmp, unsigned flags)
 {
 	int err;
 	int new_prio, new_quantum, new_cpu, niced;
 
+	
+
 	pick_cpu(rmp);
 
-	if (flags & SCHEDULE_CHANGE_PRIO)
+	new_prio = 0;		//FIFO N TEM PRIORIDADE
+	/*if (flags & SCHEDULE_CHANGE_PRIO)
 		new_prio = rmp->priority;
 	else
 		new_prio = -1;
+	*/
 
-	if (flags & SCHEDULE_CHANGE_QUANTUM)
+	new_quantum = 0x7FFFFFFF;	//VALOR MAXIMO DE QUANTUM JA Q FIFO N USA QUANTUM
+
+	/*if (flags & SCHEDULE_CHANGE_QUANTUM)
 		new_quantum = rmp->time_slice;
 	else
 		new_quantum = -1;
+	*/
 
 	if (flags & SCHEDULE_CHANGE_CPU)
 		new_cpu = rmp->cpu;
 	else
 		new_cpu = -1;
 
-	niced = (rmp->max_priority > USER_Q);
+	niced = 0; 	//FIFO N USA ISSO
+	//niced = (rmp->max_priority > USER_Q);
 
 	if ((err = sys_schedule(rmp->endpoint, new_prio,
 		new_quantum, new_cpu, niced)) != OK) {
@@ -350,19 +376,22 @@ void init_scheduling(void)
  * quantum. This function will find all proccesses that have been bumped down,
  * and pulls them back up. This default policy will soon be changed.
  */
+
+//FIFO N BALANCEIA FILA
 void balance_queues(void)
 {
 	struct schedproc *rmp;
 	int r, proc_nr;
 
-	for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
+	/*for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
 		if (rmp->flags & IN_USE) {
 			if (rmp->priority > rmp->max_priority) {
-				rmp->priority -= 1; /* increase priority */
+				rmp->priority -= 1;  //increase priority 
 				schedule_process_local(rmp);
 			}
 		}
 	}
+	*/
 
 	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
 		panic("sys_setalarm failed: %d", r);
