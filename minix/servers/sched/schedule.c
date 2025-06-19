@@ -315,6 +315,7 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 	//int new_prio, new_quantum, new_cpu, niced;
     int new_prio = 0;       // Prioridade fixa para todos
     int new_quantum, new_cpu;
+    int niced;
 
 	pick_cpu(rmp);
 
