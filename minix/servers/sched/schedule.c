@@ -38,7 +38,8 @@ static int schedule_process(struct schedproc * rmp, unsigned flags);
 
 #define cpu_is_available(c)	(cpu_proc[c] >= 0)
 
-#define DEFAULT_USER_TIME_SLICE 20
+//#define DEFAULT_USER_TIME_SLICE 200
+#define DEFAULT_USER_TIME_SLICE 0x7FFFFFFF  //VALOR MAX DE QUANTUM
 
 /* processes created by RS are sysytem processes */
 #define is_system_proc(p)	((p)->parent == RS_PROC_NR)
@@ -86,7 +87,7 @@ static void pick_cpu(struct schedproc * proc)
 
 int do_noquantum(message *m_ptr)
 {
-	register struct schedproc *rmp;
+	/*register struct schedproc *rmp;
 	int rv, proc_nr_n;
 
 	if (sched_isokendpt(m_ptr->m_source, &proc_nr_n) != OK) {
@@ -94,19 +95,16 @@ int do_noquantum(message *m_ptr)
 		m_ptr->m_source);
 		return EBADEPT;
 	}
-    rmp = &schedproc[proc_nr_n];
-    
-    // No RR simples, apenas recoloca o processo no final da fila
-    // Não alteramos prioridades
-    // if (rmp->priority < MIN_USER_Q) {
-	// 	rmp->priority += 1; /* lower priority */
-	// }
-    rmp->time_slice = DEFAULT_USER_TIME_SLICE;  // Reseta o quantum
-    
-    if ((rv = schedule_process_local(rmp)) != OK) {
-        return rv;
-    }
 
+	rmp = &schedproc[proc_nr_n];
+	if (rmp->priority < MIN_USER_Q) {
+		rmp->priority += 1; //lower priority 
+	}
+
+	if ((rv = schedule_process_local(rmp)) != OK) {
+		return rv;
+	}
+    */
 	return OK;
 }
 
@@ -175,9 +173,8 @@ int do_start_scheduling(message *m_ptr)
 	if (rmp->endpoint == rmp->parent) {
 		/* We have a special case here for init, which is the first
 		   process scheduled, and the parent of itself. */
-        rmp->priority = 0;          // Prioridade única para todos
-        rmp->time_slice = DEFAULT_USER_TIME_SLICE;
-		//rmp->priority   = USER_Q;
+		rmp->priority   = USER_Q;
+        rmp->time_slice = 0x7FFFFFFF; //QUANTUM MAX
 		//rmp->time_slice = DEFAULT_USER_TIME_SLICE;
 
 		/*
@@ -198,25 +195,22 @@ int do_start_scheduling(message *m_ptr)
 		/* We have a special case here for system processes, for which
 		 * quanum and priority are set explicitly rather than inherited 
 		 * from the parent */
-        rmp->priority = 0;          // Prioridade única
-        rmp->time_slice = DEFAULT_USER_TIME_SLICE;  // Quantum fixo
-		//rmp->priority   = rmp->max_priority;
+		rmp->priority   = rmp->max_priority;
 		//rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
-		break;
+		rmp->time_slice = 0x7FFFFFFF;   //QUANTUM MAX
+        break;
 		
 	case SCHEDULING_INHERIT:
 		/* Inherit current priority and time slice from parent. Since there
 		 * is currently only one scheduler scheduling the whole system, this
 		 * value is local and we assert that the parent endpoint is valid */
-        if ((rv = sched_isokendpt(m_ptr->m_lsys_sched_scheduling_start.parent,
-                &parent_nr_n)) != OK)
-            return rv;
+		if ((rv = sched_isokendpt(m_ptr->m_lsys_sched_scheduling_start.parent,
+				&parent_nr_n)) != OK)
+			return rv;
 
-        rmp->priority = 0;          // Prioridade única
-        rmp->time_slice = DEFAULT_USER_TIME_SLICE;  
-
-		//rmp->priority = schedproc[parent_nr_n].priority;
+		rmp->priority = schedproc[parent_nr_n].priority;
 		//rmp->time_slice = schedproc[parent_nr_n].time_slice;
+        rmp->time_slice = 0x7FFFFFFF;   //QUANTUM MAX
 		break;
 		
 	default: 
@@ -264,46 +258,42 @@ int do_start_scheduling(message *m_ptr)
  *===========================================================================*/
 int do_nice(message *m_ptr)
 {
-	// struct schedproc *rmp;
-	// int rv;
-	// int proc_nr_n;
-	// unsigned new_q, old_q, old_max_q;
+	struct schedproc *rmp;
+	int rv;
+	int proc_nr_n;
+	unsigned new_q, old_q, old_max_q;
 
-	// /* check who can send you requests */
-	// if (!accept_message(m_ptr))
-	// 	return EPERM;
+	/* check who can send you requests */
+	if (!accept_message(m_ptr))
+		return EPERM;
 
-	// if (sched_isokendpt(m_ptr->m_pm_sched_scheduling_set_nice.endpoint, &proc_nr_n) != OK) {
-	// 	printf("SCHED: WARNING: got an invalid endpoint in OoQ msg "
-	// 	"%d\n", m_ptr->m_pm_sched_scheduling_set_nice.endpoint);
-	// 	return EBADEPT;
-	// }
+	if (sched_isokendpt(m_ptr->m_pm_sched_scheduling_set_nice.endpoint, &proc_nr_n) != OK) {
+		printf("SCHED: WARNING: got an invalid endpoint in OoQ msg "
+		"%d\n", m_ptr->m_pm_sched_scheduling_set_nice.endpoint);
+		return EBADEPT;
+	}
 
-	// rmp = &schedproc[proc_nr_n];
-	// new_q = m_ptr->m_pm_sched_scheduling_set_nice.maxprio;
-	// if (new_q >= NR_SCHED_QUEUES) {
-	// 	return EINVAL;
-	// }
+	rmp = &schedproc[proc_nr_n];
+	new_q = m_ptr->m_pm_sched_scheduling_set_nice.maxprio;
+	if (new_q >= NR_SCHED_QUEUES) {
+		return EINVAL;
+	}
 
-	// /* Store old values, in case we need to roll back the changes */
-	// old_q     = rmp->priority;
-	// old_max_q = rmp->max_priority;
+	/* Store old values, in case we need to roll back the changes */
+	old_q     = rmp->priority;
+	old_max_q = rmp->max_priority;
 
-	// /* Update the proc entry and reschedule the process */
-	// rmp->max_priority = rmp->priority = new_q;
+	/* Update the proc entry and reschedule the process */
+	rmp->max_priority = rmp->priority = new_q;
 
-	// if ((rv = schedule_process_local(rmp)) != OK) {
-	// 	/* Something went wrong when rescheduling the process, roll
-	// 	 * back the changes to proc struct */
-	// 	rmp->priority     = old_q;
-	// 	rmp->max_priority = old_max_q;
-	// }
+	if ((rv = schedule_process_local(rmp)) != OK) {
+		/* Something went wrong when rescheduling the process, roll
+		 * back the changes to proc struct */
+		rmp->priority     = old_q;
+		rmp->max_priority = old_max_q;
+	}
 
-	// return rv;
-
-    // No RR sem prioridades, não faz nada
-    printf("SCHED: Nice não suportado em Round Robin sem prioridades\n");
-    return OK;
+	return rv;
 }
 
 /*===========================================================================*
@@ -312,10 +302,7 @@ int do_nice(message *m_ptr)
 static int schedule_process(struct schedproc * rmp, unsigned flags)
 {
 	int err;
-	//int new_prio, new_quantum, new_cpu, niced;
-    int new_prio = 0;       // Prioridade fixa para todos
-    int new_quantum, new_cpu;
-    int niced;
+	int new_prio, new_quantum, new_cpu, niced;
 
 	pick_cpu(rmp);
 
@@ -324,12 +311,13 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 	else
 		new_prio = -1;
 
-	if (flags & SCHEDULE_CHANGE_QUANTUM)
+
+    new_quantum = 0x7FFFFFFF; //QUANTUM MAX
+	/*if (flags & SCHEDULE_CHANGE_QUANTUM)
 		new_quantum = rmp->time_slice;
 	else
-        new_quantum = DEFAULT_USER_TIME_SLICE;
-		//new_quantum = -1;
-
+		new_quantum = -1;
+    */
 	if (flags & SCHEDULE_CHANGE_CPU)
 		new_cpu = rmp->cpu;
 	else
@@ -337,17 +325,11 @@ static int schedule_process(struct schedproc * rmp, unsigned flags)
 
 	niced = (rmp->max_priority > USER_Q);
 
-	// if ((err = sys_schedule(rmp->endpoint, new_prio,
-	// 	new_quantum, new_cpu, niced)) != OK) {
-	// 	printf("PM: An error occurred when trying to schedule %d: %d\n",
-	// 	rmp->endpoint, err);
-	// }
-
-    // niced sempre 0 (não usado)
-    if ((err = sys_schedule(rmp->endpoint, new_prio,
-        new_quantum, new_cpu, 0)) != OK) {
-        printf("PM: Error scheduling %d: %d\n", rmp->endpoint, err);
-    }
+	if ((err = sys_schedule(rmp->endpoint, new_prio,
+		new_quantum, new_cpu, niced)) != OK) {
+		printf("PM: An error occurred when trying to schedule %d: %d\n",
+		rmp->endpoint, err);
+	}
 
 	return err;
 }
@@ -377,23 +359,18 @@ void init_scheduling(void)
  */
 void balance_queues(void)
 {
-	// struct schedproc *rmp;
-	// int r, proc_nr;
+	struct schedproc *rmp;
+	int r, proc_nr;
 
-	// for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
-	// 	if (rmp->flags & IN_USE) {
-	// 		if (rmp->priority > rmp->max_priority) {
-	// 			rmp->priority -= 1; /* increase priority */
-	// 			schedule_process_local(rmp);
-	// 		}
-	// 	}
-	// }
-
-	// if ((r = sys_setalarm(balance_timeout, 0)) != OK)
-	// 	panic("sys_setalarm failed: %d", r);
-
-    // No RR simples, não precisa balancear prioridades
-    int r;
-    if ((r = sys_setalarm(balance_timeout, 0)) != OK)
-        panic("sys_setalarm failed: %d", r);
+	/*for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
+		if (rmp->flags & IN_USE) {
+			if (rmp->priority > rmp->max_priority) {
+				rmp->priority -= 1; // increase priority 
+				schedule_process_local(rmp);
+			}
+		}
+	}
+    */
+	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
+		panic("sys_setalarm failed: %d", r);
 }
